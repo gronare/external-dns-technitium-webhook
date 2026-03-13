@@ -8,6 +8,7 @@ pub struct Config {
     pub technitium_username: String,
     pub technitium_password: String,
     pub zone: String,
+    pub zones: Vec<String>,
     pub domain_filters: Option<Vec<String>>,
 }
 
@@ -20,6 +21,7 @@ impl Default for Config {
             technitium_username: String::new(),
             technitium_password: String::new(),
             zone: String::new(),
+            zones: Vec::new(),
             domain_filters: None,
         }
     }
@@ -36,6 +38,10 @@ impl Config {
             technitium_password: env::var("TECHNITIUM_PASSWORD")
                 .expect("Missing TECHNITIUM_PASSWORD"),
             zone: env::var("ZONE").expect("Missing ZONE"),
+            zones: env::var("ZONES")
+                .ok()
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_else(|| vec![env::var("ZONE").expect("Missing ZONE")]),
             domain_filters: env::var("DOMAIN_FILTERS")
                 .ok()
                 .map(|v| v.split(';').map(String::from).collect()),

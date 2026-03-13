@@ -68,44 +68,46 @@ pub async fn get_records(
 
     debug!("Fetching DNS records");
 
-    let ret = app_state
-        .client
-        .read()
-        .await
-        .get_records(technitium::GetRecordsPayload {
-            domain: app_state.config.zone.clone(),
-            list_zone: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
     let mut endpoints = Vec::new();
-    for ri in ret.records {
-        let mut ep = Endpoint {
-            dns_name: ri.name,
-            record_ttl: Some(ri.ttl),
-            ..Default::default()
-        };
-        match ri.data {
-            RecordData::A(data) => {
-                ep.record_type = "A".to_string();
-                ep.targets = vec![data.ip_address.to_string()];
+    for zone in &app_state.config.zones {
+        let ret = app_state
+            .client
+            .read()
+            .await
+            .get_records(technitium::GetRecordsPayload {
+                domain: zone.clone(),
+                list_zone: Some(true),
+                ..Default::default()
+            })
+            .await?;
+
+        for ri in ret.records {
+            let mut ep = Endpoint {
+                dns_name: ri.name,
+                record_ttl: Some(ri.ttl),
+                ..Default::default()
+            };
+            match ri.data {
+                RecordData::A(data) => {
+                    ep.record_type = "A".to_string();
+                    ep.targets = vec![data.ip_address.to_string()];
+                }
+                RecordData::AAAA(data) => {
+                    ep.record_type = "AAAA".to_string();
+                    ep.targets = vec![data.ip_address.to_string()];
+                }
+                RecordData::CNAME(data) => {
+                    ep.record_type = "CNAME".to_string();
+                    ep.targets = vec![data.cname.to_string()];
+                }
+                RecordData::TXT(data) => {
+                    ep.record_type = "TXT".to_string();
+                    ep.targets = vec![data.text.to_string()];
+                }
+                RecordData::Other { .. } => continue,
             }
-            RecordData::AAAA(data) => {
-                ep.record_type = "AAAA".to_string();
-                ep.targets = vec![data.ip_address.to_string()];
-            }
-            RecordData::CNAME(data) => {
-                ep.record_type = "CNAME".to_string();
-                ep.targets = vec![data.cname.to_string()];
-            }
-            RecordData::TXT(data) => {
-                ep.record_type = "TXT".to_string();
-                ep.targets = vec![data.text.to_string()];
-            }
-            RecordData::Other { .. } => continue,
+            endpoints.push(ep);
         }
-        endpoints.push(ep);
     }
 
     debug!("Found {} endpoints", endpoints.len());
