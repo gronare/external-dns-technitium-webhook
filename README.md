@@ -17,8 +17,7 @@ The application expects all configuration to be passed in via environment variab
 | `TECHNITIUM_URL`      | The URL of the Technitium DNS server (required).                                                                 |
 | `TECHNITIUM_USERNAME` | The username to authenticate with the Technitium DNS server (required).                                          |
 | `TECHNITIUM_PASSWORD` | The password to authenticate with the Technitium DNS server (required).                                          |
-| `ZONE`                | The primary zone to manage (e.g. `example.com`, required).                                                       |
-| `ZONES`               | A comma-separated list of all zones to manage (e.g. `example.com,other.com`, defaults to the value of `ZONE`).  |
+| `ZONES`               | A comma-separated list of zones to manage (e.g. `example.com,other.com`, required).                              |
 | `DOMAIN_FILTERS`      | A semicolon-separated list of domain filters to return during ExternalDNS negotiation (optional, defaults to the value of `ZONES`). |
 
 ### Zone Handling
@@ -73,8 +72,6 @@ spec:
               value: "5580"
             - name: TECHNITIUM_URL
               value: "http://technitium-dns-dashboard.dns.svc.cluster.local:5380"
-            - name: ZONE
-              value: "example.com"
             - name: ZONES
               value: "example.com,other.com"
           envFrom:
