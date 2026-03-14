@@ -27,8 +27,9 @@ mod technitium;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn check_zone_existence(
+async fn zone_exists(
     app_state: &Arc<AppState>,
+    zone: &str,
 ) -> Result<bool, technitium::TechnitiumError> {
     let client = app_state.client.read().await;
     let mut page_number = 1;
@@ -36,12 +37,12 @@ async fn check_zone_existence(
     loop {
         let zones = client
             .list_zones(technitium::ListZonesPayload {
-                zone: app_state.config.zone.clone(),
+                zone: zone.to_string(),
                 page_number: Some(page_number),
                 zones_per_page: Some(100),
             })
             .await?;
-        if zones.zones.iter().any(|z| z.name == app_state.config.zone) {
+        if zones.zones.iter().any(|z| z.name == zone) {
             return Ok(true);
         }
         if page_number >= zones.total_pages {
@@ -52,10 +53,13 @@ async fn check_zone_existence(
     Ok(false)
 }
 
-async fn create_default_zone(app_state: &Arc<AppState>) -> Result<(), technitium::TechnitiumError> {
+async fn create_forwarder_zone(
+    app_state: &Arc<AppState>,
+    zone: &str,
+) -> Result<(), technitium::TechnitiumError> {
     let client = app_state.client.read().await;
     let payload = technitium::CreateZonePayload {
-        zone: app_state.config.zone.clone(),
+        zone: zone.to_string(),
         zone_type: technitium::ZoneType::Forwarder,
         protocol: Some(technitium::Protocol::Udp),
         forwarder: Some("this-server".to_string()),
@@ -64,10 +68,7 @@ async fn create_default_zone(app_state: &Arc<AppState>) -> Result<(), technitium
     };
 
     client.create_zone(payload).await?;
-    info!(
-        "Zone {} created successfully in Technitium DNS server.",
-        &app_state.config.zone
-    );
+    info!("Zone {} created successfully in Technitium DNS server.", zone);
     Ok(())
 }
 
@@ -95,28 +96,26 @@ async fn setup_technitium_connection(app_state: Arc<AppState>) {
     );
     tokio::spawn(auto_renew_technitium_token(Arc::clone(&app_state)));
 
-    debug!("Verifying and preparing the DNS Zone...");
+    debug!("Verifying and preparing DNS zones...");
 
-    let zone_exists = match check_zone_existence(&app_state).await {
-        Ok(ret) => ret,
-        Err(e) => {
-            error!("Failed to list zones: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    if zone_exists {
-        info!(
-            "Zone {} exists in Technitium DNS server.",
-            &app_state.config.zone
-        );
-    } else {
-        if let Err(e) = create_default_zone(&app_state).await {
-            error!(
-                "Failed to create the zone {} in Technitium DNS server: {}",
-                &app_state.config.zone, e
-            );
-            std::process::exit(1);
+    for zone in &app_state.config.zones.clone() {
+        match zone_exists(&app_state, zone).await {
+            Ok(true) => {
+                info!("Zone {} exists in Technitium DNS server.", zone);
+            }
+            Ok(false) => {
+                if let Err(e) = create_forwarder_zone(&app_state, zone).await {
+                    error!(
+                        "Failed to create the zone {} in Technitium DNS server: {}",
+                        zone, e
+                    );
+                    std::process::exit(1);
+                }
+            }
+            Err(e) => {
+                error!("Failed to list zones: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 
