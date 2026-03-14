@@ -82,6 +82,9 @@ pub async fn get_records(
             .await?;
 
         for ri in ret.records {
+            if ri.disabled {
+                continue;
+            }
             let mut ep = Endpoint {
                 dns_name: ri.name,
                 record_ttl: Some(ri.ttl),
@@ -159,18 +162,12 @@ pub async fn apply_record(
 
     for ep in deletions {
         for target in ep.targets {
-            let data = match ep.record_type.as_str() {
-                "A" => technitium::RecordAData { ip_address: target }.into(),
-                "AAAA" => technitium::RecordAAAAData { ip_address: target }.into(),
-                "CNAME" => technitium::RecordCNAMEData { cname: target }.into(),
-                "TXT" => technitium::RecordTXTData { text: target }.into(),
-                _ => {
-                    warn!(
-                        "Skipping deletion of {} with invalid record type of {}",
-                        ep.dns_name, ep.record_type
-                    );
-                    continue;
-                }
+            let Some(data) = record_payload(&ep.record_type, target) else {
+                warn!(
+                    "Skipping deletion of {} with unsupported record type {}",
+                    ep.dns_name, ep.record_type
+                );
+                continue;
             };
             info!("Deleting record {} with data {:?}", ep.dns_name, data);
             app_state
@@ -188,18 +185,12 @@ pub async fn apply_record(
 
     for ep in additions {
         for target in ep.targets {
-            let data = match ep.record_type.as_str() {
-                "A" => technitium::RecordAData { ip_address: target }.into(),
-                "AAAA" => technitium::RecordAAAAData { ip_address: target }.into(),
-                "CNAME" => technitium::RecordCNAMEData { cname: target }.into(),
-                "TXT" => technitium::RecordTXTData { text: target }.into(),
-                _ => {
-                    warn!(
-                        "Skipping creation of {} with invalid record type of {}",
-                        ep.dns_name, ep.record_type
-                    );
-                    continue;
-                }
+            let Some(data) = record_payload(&ep.record_type, target) else {
+                warn!(
+                    "Skipping creation of {} with unsupported record type {}",
+                    ep.dns_name, ep.record_type
+                );
+                continue;
             };
             info!("Adding record {} with data {:?}", ep.dns_name, data);
             app_state
@@ -217,4 +208,17 @@ pub async fn apply_record(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn record_payload(
+    record_type: &str,
+    target: String,
+) -> Option<technitium::RecordPayloadData> {
+    match record_type {
+        "A" => Some(technitium::RecordAData { ip_address: target }.into()),
+        "AAAA" => Some(technitium::RecordAAAAData { ip_address: target }.into()),
+        "CNAME" => Some(technitium::RecordCNAMEData { cname: target }.into()),
+        "TXT" => Some(technitium::RecordTXTData { text: target }.into()),
+        _ => None,
+    }
 }

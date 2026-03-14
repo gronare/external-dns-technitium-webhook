@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::debug;
 
 #[derive(Debug, Error)]
 pub enum TechnitiumError {
@@ -309,7 +309,7 @@ mod tests {
             .add_record(AddRecordPayload {
                 domain: "example.com".to_string(),
                 ttl: Some(3600),
-                data: AddRecordPayloadRecordData::A(RecordAData {
+                data: RecordPayloadData::A(RecordAData {
                     ip_address: "3.3.3.3".to_string(),
                 }),
                 ..Default::default()

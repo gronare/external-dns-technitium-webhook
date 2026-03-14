@@ -61,7 +61,7 @@ pub struct AddRecordPayload {
     #[serde(rename = "domain")]
     pub domain: String,
     #[serde(flatten)]
-    pub data: AddRecordPayloadRecordData,
+    pub data: RecordPayloadData,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "zone")]
     pub zone: Option<String>,
@@ -77,59 +77,6 @@ pub struct AddRecordPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "expiryTtl")]
     pub expiry_ttl: Option<u32>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "type")]
-pub enum AddRecordPayloadRecordData {
-    #[serde(rename = "A")]
-    A(RecordAData),
-    #[serde(rename = "AAAA")]
-    AAAA(RecordAAAAData),
-    #[serde(rename = "CNAME")]
-    CNAME(RecordCNAMEData),
-    #[serde(rename = "TXT")]
-    TXT(RecordTXTData),
-    #[serde(untagged)]
-    Other {
-        #[serde(rename = "type")]
-        record_type: String,
-        #[serde(rename = "rdata")]
-        data: serde_json::Value,
-    },
-}
-
-impl Default for AddRecordPayloadRecordData {
-    fn default() -> Self {
-        return Self::Other {
-            record_type: "".to_string(),
-            data: serde_json::Value::String("".to_string()),
-        };
-    }
-}
-
-impl From<RecordAData> for AddRecordPayloadRecordData {
-    fn from(value: RecordAData) -> Self {
-        AddRecordPayloadRecordData::A(value)
-    }
-}
-
-impl From<RecordAAAAData> for AddRecordPayloadRecordData {
-    fn from(value: RecordAAAAData) -> Self {
-        AddRecordPayloadRecordData::AAAA(value)
-    }
-}
-
-impl From<RecordCNAMEData> for AddRecordPayloadRecordData {
-    fn from(value: RecordCNAMEData) -> Self {
-        AddRecordPayloadRecordData::CNAME(value)
-    }
-}
-
-impl From<RecordTXTData> for AddRecordPayloadRecordData {
-    fn from(value: RecordTXTData) -> Self {
-        AddRecordPayloadRecordData::TXT(value)
-    }
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
@@ -160,15 +107,19 @@ pub struct DeleteRecordPayload {
     #[serde(rename = "domain")]
     pub domain: String,
     #[serde(flatten)]
-    pub data: DeleteRecordPayloadRecordData,
+    pub data: RecordPayloadData,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "zone")]
     pub zone: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+pub struct DeleteRecordResponse {}
+
+/// Shared record data type used for both add and delete payloads.
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
-pub enum DeleteRecordPayloadRecordData {
+pub enum RecordPayloadData {
     #[serde(rename = "A")]
     A(RecordAData),
     #[serde(rename = "AAAA")]
@@ -186,7 +137,7 @@ pub enum DeleteRecordPayloadRecordData {
     },
 }
 
-impl Default for DeleteRecordPayloadRecordData {
+impl Default for RecordPayloadData {
     fn default() -> Self {
         Self::Other {
             record_type: "".to_string(),
@@ -195,32 +146,29 @@ impl Default for DeleteRecordPayloadRecordData {
     }
 }
 
-impl From<RecordAData> for DeleteRecordPayloadRecordData {
+impl From<RecordAData> for RecordPayloadData {
     fn from(data: RecordAData) -> Self {
         Self::A(data)
     }
 }
 
-impl From<RecordAAAAData> for DeleteRecordPayloadRecordData {
+impl From<RecordAAAAData> for RecordPayloadData {
     fn from(data: RecordAAAAData) -> Self {
         Self::AAAA(data)
     }
 }
 
-impl From<RecordCNAMEData> for DeleteRecordPayloadRecordData {
+impl From<RecordCNAMEData> for RecordPayloadData {
     fn from(data: RecordCNAMEData) -> Self {
         Self::CNAME(data)
     }
 }
 
-impl From<RecordTXTData> for DeleteRecordPayloadRecordData {
+impl From<RecordTXTData> for RecordPayloadData {
     fn from(data: RecordTXTData) -> Self {
         Self::TXT(data)
     }
 }
-
-#[derive(Debug, Deserialize, Eq, PartialEq)]
-pub struct DeleteRecordResponse {}
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct ZoneInfo {
@@ -292,74 +240,6 @@ pub struct RecordCNAMEData {
 pub struct RecordTXTData {
     #[serde(rename = "text")]
     pub text: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct RecordAUpdate {
-    #[serde(flatten)]
-    pub current: RecordAData,
-    #[serde(rename = "newIpAddress")]
-    pub ip_address: String,
-}
-
-impl From<RecordAData> for RecordAUpdate {
-    fn from(data: RecordAData) -> Self {
-        Self {
-            current: data.clone(),
-            ip_address: data.ip_address,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct RecordAAAAUpdate {
-    #[serde(flatten)]
-    pub current: RecordAAAAData,
-    #[serde(rename = "newIpAddress")]
-    pub ip_address: String,
-}
-
-impl From<RecordAAAAData> for RecordAAAAUpdate {
-    fn from(data: RecordAAAAData) -> Self {
-        Self {
-            current: data.clone(),
-            ip_address: data.ip_address,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct RecordCNAMEUpdate {
-    #[serde(flatten)]
-    pub current: RecordCNAMEData,
-    #[serde(rename = "newCname")]
-    pub cname: String,
-}
-
-impl From<RecordCNAMEData> for RecordCNAMEUpdate {
-    fn from(data: RecordCNAMEData) -> Self {
-        Self {
-            current: data.clone(),
-            cname: data.cname,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub struct RecordTXTUpdate {
-    #[serde(flatten)]
-    pub current: RecordTXTData,
-    #[serde(rename = "newText")]
-    pub text: String,
-}
-
-impl From<RecordTXTData> for RecordTXTUpdate {
-    fn from(data: RecordTXTData) -> Self {
-        Self {
-            current: data.clone(),
-            text: data.text,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Eq, PartialEq)]
@@ -501,7 +381,7 @@ mod tests {
         let serialized = serde_urlencoded::to_string(&AddRecordPayload {
             domain: "example.com".to_string(),
             ttl: Some(3600),
-            data: AddRecordPayloadRecordData::A(RecordAData {
+            data: RecordPayloadData::A(RecordAData {
                 ip_address: "1.1.1.1".to_string(),
             }),
             ..Default::default()
@@ -518,7 +398,7 @@ mod tests {
         let serialized = serde_urlencoded::to_string(&AddRecordPayload {
             domain: "example.com".to_string(),
             ttl: Some(3600),
-            data: AddRecordPayloadRecordData::TXT(RecordTXTData {
+            data: RecordPayloadData::TXT(RecordTXTData {
                 text: "v=spf1 include:example.com -all".to_string(),
             }),
             ..Default::default()
