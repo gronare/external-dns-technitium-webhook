@@ -222,3 +222,245 @@ fn record_payload(
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::AppState;
+    use crate::config::Config;
+    use crate::technitium::{
+        RecordAAAAData, RecordAData, RecordCNAMEData, RecordPayloadData, RecordTXTData,
+        TechnitiumClient,
+    };
+    use axum::{Router, body::Body, routing::get};
+    use http_body_util::BodyExt;
+    use serde_json::json;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::RwLock;
+    use tower::ServiceExt;
+
+    fn make_state(server_url: &str, zones: Vec<String>) -> Arc<AppState> {
+        Arc::new(AppState {
+            config: Config {
+                zones,
+                ..Default::default()
+            },
+            is_ready: RwLock::new(true),
+            client: RwLock::new(TechnitiumClient::new(
+                server_url.to_string(),
+                "token".to_string(),
+                Duration::from_secs(5),
+            )),
+        })
+    }
+
+    async fn body_json(response: axum::response::Response) -> serde_json::Value {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    // --- record_payload ---
+
+    #[test]
+    fn test_record_payload_a() {
+        let r = record_payload("A", "1.2.3.4".to_string()).unwrap();
+        if let RecordPayloadData::A(RecordAData { ip_address }) = r {
+            assert_eq!(ip_address, "1.2.3.4");
+        } else {
+            panic!("expected A");
+        }
+    }
+
+    #[test]
+    fn test_record_payload_aaaa() {
+        let r = record_payload("AAAA", "::1".to_string()).unwrap();
+        if let RecordPayloadData::AAAA(RecordAAAAData { ip_address }) = r {
+            assert_eq!(ip_address, "::1");
+        } else {
+            panic!("expected AAAA");
+        }
+    }
+
+    #[test]
+    fn test_record_payload_cname() {
+        let r = record_payload("CNAME", "example.com".to_string()).unwrap();
+        if let RecordPayloadData::CNAME(RecordCNAMEData { cname }) = r {
+            assert_eq!(cname, "example.com");
+        } else {
+            panic!("expected CNAME");
+        }
+    }
+
+    #[test]
+    fn test_record_payload_txt() {
+        let r = record_payload("TXT", "v=spf1 -all".to_string()).unwrap();
+        if let RecordPayloadData::TXT(RecordTXTData { text }) = r {
+            assert_eq!(text, "v=spf1 -all");
+        } else {
+            panic!("expected TXT");
+        }
+    }
+
+    #[test]
+    fn test_record_payload_unknown_returns_none() {
+        assert!(record_payload("MX", "mail.example.com".to_string()).is_none());
+        assert!(record_payload("NS", "ns1.example.com".to_string()).is_none());
+        assert!(record_payload("", "target".to_string()).is_none());
+    }
+
+    // --- negotiate_domain_filter ---
+
+    #[tokio::test]
+    async fn test_negotiate_domain_filter_falls_back_to_zones() {
+        let state = make_state(
+            "http://unused",
+            vec!["gronare.com".to_string(), "divperedi.com".to_string()],
+        );
+        let app = Router::new()
+            .route("/", get(negotiate_domain_filter))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["filters"], json!(["gronare.com", "divperedi.com"]));
+    }
+
+    #[tokio::test]
+    async fn test_negotiate_domain_filter_uses_explicit_domain_filters() {
+        let mut state = make_state(
+            "http://unused",
+            vec!["gronare.com".to_string()],
+        );
+        Arc::get_mut(&mut state).unwrap().config.domain_filters =
+            Some(vec![".gronare.com".to_string(), ".divperedi.com".to_string()]);
+
+        let app = Router::new()
+            .route("/", get(negotiate_domain_filter))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = body_json(resp).await;
+        assert_eq!(body["filters"], json!([".gronare.com", ".divperedi.com"]));
+    }
+
+    // --- get_records ---
+
+    fn zone_records_response(records: serde_json::Value) -> String {
+        json!({
+            "status": "ok",
+            "response": {
+                "zone": {"name": "example.com", "type": "Primary", "disabled": false},
+                "records": records
+            }
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_get_records_skips_disabled() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("POST", "/api/zones/records/get")
+            .with_status(200)
+            .with_body(zone_records_response(json!([
+                {
+                    "disabled": false,
+                    "name": "app.example.com",
+                    "type": "A",
+                    "ttl": 300,
+                    "rData": {"ipAddress": "1.2.3.4"}
+                },
+                {
+                    "disabled": true,
+                    "name": "hidden.example.com",
+                    "type": "A",
+                    "ttl": 300,
+                    "rData": {"ipAddress": "5.6.7.8"}
+                }
+            ])))
+            .create();
+
+        let state = make_state(&server.url(), vec!["example.com".to_string()]);
+        let app = Router::new()
+            .route("/records", get(get_records))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/records")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let endpoints: Vec<serde_json::Value> =
+            serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0]["dnsName"], "app.example.com");
+    }
+
+    #[tokio::test]
+    async fn test_get_records_merges_multiple_zones() {
+        let mut server = mockito::Server::new_async().await;
+
+        // Both zones share the same endpoint — mockito matches regardless of body
+        let _mock = server
+            .mock("POST", "/api/zones/records/get")
+            .with_status(200)
+            .with_body(zone_records_response(json!([
+                {
+                    "disabled": false,
+                    "name": "app.example.com",
+                    "type": "A",
+                    "ttl": 300,
+                    "rData": {"ipAddress": "1.2.3.4"}
+                }
+            ])))
+            .expect(2) // called once per zone
+            .create();
+
+        let state = make_state(
+            &server.url(),
+            vec!["example.com".to_string(), "other.com".to_string()],
+        );
+        let app = Router::new()
+            .route("/records", get(get_records))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/records")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let endpoints: Vec<serde_json::Value> =
+            serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(endpoints.len(), 2);
+    }
+}

@@ -265,6 +265,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_client_list_zones() {
+        let mut server = mockito::Server::new_async().await;
+
+        let response_data = json!({
+            "status": "ok",
+            "response": {
+                "pageNumber": 1,
+                "totalPages": 1,
+                "totalZones": 1,
+                "zones": [
+                    {"name": "example.com", "type": "Primary", "disabled": false}
+                ]
+            }
+        });
+
+        let mock = server
+            .mock("POST", "/api/zones/list")
+            .match_header("content-type", "application/x-www-form-urlencoded")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("zone".into(), "example.com".into()),
+            ]))
+            .with_status(200)
+            .with_body(response_data.to_string())
+            .create();
+
+        let client =
+            TechnitiumClient::new(server.url(), "token".to_string(), Duration::from_secs(30));
+        let res = client
+            .list_zones(ListZonesPayload {
+                zone: "example.com".to_string(),
+                page_number: None,
+                zones_per_page: None,
+            })
+            .await
+            .unwrap();
+
+        mock.assert();
+        assert_eq!(res.page_number, 1);
+        assert_eq!(res.total_pages, 1);
+        assert_eq!(res.zones.len(), 1);
+        assert_eq!(res.zones[0].name, "example.com");
+    }
+
+    #[tokio::test]
+    async fn test_client_delete_record() {
+        let mut server = mockito::Server::new_async().await;
+
+        let response_data = json!({
+            "status": "ok",
+            "response": {}
+        });
+
+        let mock = server
+            .mock("POST", "/api/zones/records/delete")
+            .match_header("content-type", "application/x-www-form-urlencoded")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("domain".into(), "app.example.com".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+                mockito::Matcher::UrlEncoded("ipAddress".into(), "1.2.3.4".into()),
+            ]))
+            .with_status(200)
+            .with_body(response_data.to_string())
+            .create();
+
+        let client =
+            TechnitiumClient::new(server.url(), "token".to_string(), Duration::from_secs(30));
+        client
+            .delete_record(DeleteRecordPayload {
+                domain: "app.example.com".to_string(),
+                data: RecordPayloadData::A(RecordAData {
+                    ip_address: "1.2.3.4".to_string(),
+                }),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_client_add_record() {
         let mut server = mockito::Server::new_async().await;
 
