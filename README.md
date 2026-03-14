@@ -10,23 +10,26 @@ integrate it with [Technitium DNS](https://technitium.com/dns/).
 
 The application expects all configuration to be passed in via environment variables.
 
-| Environment Variable  | Description                                                                                               |
-|-----------------------|-----------------------------------------------------------------------------------------------------------|
-| `LISTEN_ADDRESS`      | The address the webhook server binds to (defaults to `0.0.0.0`).                                          |
-| `LISTEN_PORT`         | The port the webhook server listens ono (defaults to `3000`).                                             |
-| `TECHNITIUM_URL`      | The URL of the Technitium DNS server (required).                                                          |
-| `TECHNITIUM_USERNAME` | The username to authenticate with the Technitium DNS server (required).                                   |
-| `TECHNITIUM_PASSWORD` | The password to authenticate with the Technitium DNS server (required).                                   |
-| `ZONE`                | The zone to manage (e.g. `example.com`, required).                                                        |
-| `DOMAIN_FILTERS`      | A semicolon-separated list of domain filters to apply (e.g. `foo.example.com;bar.example.com`, optional). |
+| Environment Variable  | Description                                                                                                      |
+|-----------------------|------------------------------------------------------------------------------------------------------------------|
+| `LISTEN_ADDRESS`      | The address the webhook server binds to (defaults to `0.0.0.0`).                                                 |
+| `LISTEN_PORT`         | The port the webhook server listens on (defaults to `3000`).                                                     |
+| `TECHNITIUM_URL`      | The URL of the Technitium DNS server (required).                                                                 |
+| `TECHNITIUM_USERNAME` | The username to authenticate with the Technitium DNS server (required).                                          |
+| `TECHNITIUM_PASSWORD` | The password to authenticate with the Technitium DNS server (required).                                          |
+| `ZONE`                | The primary zone to manage (e.g. `example.com`, required).                                                       |
+| `ZONES`               | A comma-separated list of all zones to manage (e.g. `example.com,other.com`, defaults to the value of `ZONE`).  |
+| `DOMAIN_FILTERS`      | A semicolon-separated list of domain filters to apply (e.g. `foo.example.com;bar.example.com`, optional).        |
 
 ### Zone Handling
 
-If the specified `ZONE` doesn't exist in Technitium DNS, it will be created automatically when the application starts.
+On startup, the webhook checks each zone listed in `ZONES` and creates any that don't exist in Technitium DNS.
 
-The zone created will be of Forward type, with forwarder to `this-server` and DNSSEC validation enabled. This means
-that if the record doesn't exist in the zone on Technitium DNS, the internal resolver will be used and the DNS servers
-on the internet will be consulted.
+Zones are created as Conditional Forwarder type, with forwarder set to `this-server` and DNSSEC validation enabled.
+This provides split-horizon DNS behaviour: records added by ExternalDNS are served locally, while any record not
+present in the zone is forwarded to the DNS server's upstream resolver (e.g. Cloudflare DoH). This means external
+records such as MX, VPN entries, and domains pointing to third-party services continue to resolve correctly from
+inside the network.
 
 ## Example Kubernetes Deployment
 
@@ -62,7 +65,7 @@ spec:
             - --provider=webhook
             - --webhook-provider-url=http://localhost:5580
         - name: webhook
-          image: ghcr.io/roosmaa/external-dns-technitium-webhook
+          image: ghcr.io/gronare/external-dns-technitium-webhook
           env:
             - name: RUST_LOG
               value: "external_dns_technitium_webhook=info"
@@ -72,6 +75,8 @@ spec:
               value: "http://technitium-dns-dashboard.dns.svc.cluster.local:5380"
             - name: ZONE
               value: "example.com"
+            - name: ZONES
+              value: "example.com,other.com"
           envFrom:
             - secretRef:
                 name: technitium-dns
