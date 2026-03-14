@@ -53,7 +53,7 @@ pub async fn negotiate_domain_filter(
         .config
         .domain_filters
         .clone()
-        .unwrap_or_else(|| vec![app_state.config.zone.clone()]);
+        .unwrap_or_else(|| app_state.config.zones.clone());
 
     Ok(ExtDnsJson(Filters { filters }))
 }

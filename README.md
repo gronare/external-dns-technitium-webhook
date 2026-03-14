@@ -19,7 +19,7 @@ The application expects all configuration to be passed in via environment variab
 | `TECHNITIUM_PASSWORD` | The password to authenticate with the Technitium DNS server (required).                                          |
 | `ZONE`                | The primary zone to manage (e.g. `example.com`, required).                                                       |
 | `ZONES`               | A comma-separated list of all zones to manage (e.g. `example.com,other.com`, defaults to the value of `ZONE`).  |
-| `DOMAIN_FILTERS`      | A semicolon-separated list of domain filters to apply (e.g. `foo.example.com;bar.example.com`, optional).        |
+| `DOMAIN_FILTERS`      | A semicolon-separated list of domain filters to return during ExternalDNS negotiation (optional, defaults to the value of `ZONES`). |
 
 ### Zone Handling
 
