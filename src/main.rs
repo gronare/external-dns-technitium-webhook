@@ -72,16 +72,18 @@ async fn create_forwarder_zone(
     Ok(())
 }
 
-async fn setup_technitium_connection(app_state: Arc<AppState>) {
-    // Construct the login payload using the credentials from the configuration
-    let login_payload = technitium::LoginPayload {
+async fn login(app_state: &Arc<AppState>) -> Result<String, technitium::TechnitiumError> {
+    let payload = technitium::LoginPayload {
         username: app_state.config.technitium_username.clone(),
         password: app_state.config.technitium_password.clone(),
     };
+    let resp = app_state.client.read().await.login(payload).await?;
+    Ok(resp.token)
+}
 
-    // Attempt to log in to Technitium using the login payload
-    let token = match app_state.client.read().await.login(login_payload).await {
-        Ok(resp) => resp.token,
+async fn setup_technitium_connection(app_state: Arc<AppState>) {
+    let token = match login(&app_state).await {
+        Ok(t) => t,
         Err(e) => {
             error!("Failed to log in to Technitium DNS server: {}", e);
             std::process::exit(1);
@@ -130,15 +132,8 @@ async fn auto_renew_technitium_token(app_state: Arc<AppState>) {
     loop {
         sleep(sleep_for).await;
 
-        // Construct the login payload using the credentials from the configuration
-        let login_payload = technitium::LoginPayload {
-            username: app_state.config.technitium_username.clone(),
-            password: app_state.config.technitium_password.clone(),
-        };
-
-        // Attempt to log in to Technitium using the login payload
-        let token = match app_state.client.read().await.login(login_payload).await {
-            Ok(resp) => resp.token,
+        let token = match login(&app_state).await {
+            Ok(t) => t,
             Err(e) => {
                 error!("Failed to renew Technitium DNS server access token: {}", e);
                 sleep_for = DURATION_FAILURE;
